@@ -38,6 +38,7 @@ def test_extract(request: ExtractTestRequest):
 class ChatRequest(BaseModel):
     message: str
     device_id:str
+    image: str | None = None
 
 
 def get_or_create_user(device_id: str):
@@ -111,13 +112,38 @@ def chat(request: ChatRequest):
     else:
         memory_text = "You don't have any saved memories about this user yet."
 
-    result = client.chat.completions.create(
+    '''result = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
             {"role": "system", "content": f"You are Jarvi, a helpful voice assistant. {memory_text}"},
             {"role": "user", "content": request.message},
         ],
         max_tokens=200,
+    )'''
+    
+    if request.image:
+        messages = [
+            { "role": "system", "content": f"You are Jarvi, a helpful voice assistant. {memory_text}"},
+            { "role": "user", "content": [
+                {"type": "text", "text": request.message},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{request.image}"}},
+        ]},
+     ]
+        model = "qwen/qwen3.6-27b"
+        max_tokens = 500
+    else:
+        messages = [
+            { "role": "system", "content": f"You are Jarvi, a helpful voice assistant. {memory_text}"},
+            { "role": "user", "content": request.message},
+        ]
+        model = "openai/gpt-oss-20b"
+        max_tokens = 500
+    
+    result = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        reasoning_effort= "none" if model == "qwen/qwen3.6-27b" else None,
     )
     reply = result.choices[0].message.content
     

@@ -8,9 +8,48 @@ export default function Home() {
   const [assistantResponse, setAssistantResponse] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const deviceIDref = useRef<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      streamRef.current = stream;
+      setCameraStream(stream);
+      setIsCameraOn(true);
+      setError(null);
+    } catch (err: any) {
+      console.error("Error accessing camera:", err);
+      setIsCameraOn(false);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setError("Camera permission denied. Please allow camera access in your browser settings.");
+      } else {
+        setError("Could not access camera. Please check your camera connection.");
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraStream(null);
+    setIsCameraOn(false);
+  };
+
+  useEffect(() => {
+    if (videoRef.current && cameraStream) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
 
   useEffect(() => {
     // Initialize Web Speech APIs in browser
@@ -88,6 +127,9 @@ export default function Home() {
       if (synthRef.current) {
         synthRef.current.cancel();
       }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
     };
   }, []);
 
@@ -99,16 +141,42 @@ export default function Home() {
         return;
       }
 
+      // Capture still frame if camera is active
+      let capturedImage: string | null = null;
+      if (isCameraOn && videoRef.current) {
+        try {
+          const video = videoRef.current;
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturedImage = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+          }
+        } catch (e) {
+          console.error("Failed to capture still frame:", e);
+        }
+      }
+
       // Start Assistant Response Speech Synthesis
       const getResponseAndSpeak = async () => {
         setStatus("speaking");
         let responsePhrase = "Sorry, I couldn't reach the servers.";
 
         try {
+          const requestBody: any = {
+            message: userTranscript,
+            device_id: deviceIDref.current
+          };
+          if (capturedImage) {
+            requestBody.image = capturedImage;
+          }
+
           const res = await fetch("http://localhost:8000/chat", {
             method: 'POST',
             headers: { "Content-type": "application/json" },
-            body: JSON.stringify({ message: userTranscript, device_id: deviceIDref.current }),
+            body: JSON.stringify(requestBody),
           });
           const data = await res.json()
           responsePhrase = data.response;
@@ -142,7 +210,7 @@ export default function Home() {
       }
       getResponseAndSpeak();
     }
-  }, [status, userTranscript]);
+  }, [status, userTranscript, isCameraOn]);
 
   const handleStartListening = () => {
     if (!recognitionRef.current) {
@@ -287,22 +355,63 @@ export default function Home() {
             </div>
           </div>
 
-          <button
-            onClick={handleReset}
-            disabled={status === "idle" && !userTranscript && !assistantResponse}
-            className="reset-btn"
-            aria-label="Reset app state"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-              <path d="M3 21v-5h5" />
-            </svg>
-            Reset
-          </button>
+          <div className="controls-row">
+            <button
+              onClick={isCameraOn ? stopCamera : startCamera}
+              className={`toggle-vision-btn ${isCameraOn ? "active" : ""}`}
+              aria-label="Toggle camera vision"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {isCameraOn ? (
+                  <>
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                    <path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                    <line x1="2" x2="22" y1="2" y2="22" />
+                  </>
+                )}
+              </svg>
+              Let Edith See
+            </button>
+
+            <button
+              onClick={handleReset}
+              disabled={status === "idle" && !userTranscript && !assistantResponse}
+              className="reset-btn"
+              aria-label="Reset app state"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M3 21v-5h5" />
+              </svg>
+              Reset
+            </button>
+          </div>
         </div>
       </main>
+
+      {isCameraOn && (
+        <div className="camera-preview-container">
+          <div className="camera-badge">
+            <span className="camera-badge-dot"></span>
+            EDITH VISION
+          </div>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="camera-video"
+          />
+        </div>
+      )}
     </>
   );
 }
