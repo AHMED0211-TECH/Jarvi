@@ -8,13 +8,19 @@ export default function Home() {
   const [assistantResponse, setAssistantResponse] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const deviceIDref = useRef<string | null>(null);
 
   useEffect(() => {
     // Initialize Web Speech APIs in browser
     if (typeof window !== "undefined") {
+      let id = localStorage.getItem("jarvi_device_id");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("jarvi_device_id", id)
+      }
+      deviceIDref.current = id;
       synthRef.current = window.speechSynthesis;
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -102,7 +108,7 @@ export default function Home() {
           const res = await fetch("http://localhost:8000/chat", {
             method: 'POST',
             headers: { "Content-type": "application/json" },
-            body: JSON.stringify({ message: userTranscript }),
+            body: JSON.stringify({ message: userTranscript, device_id: deviceIDref.current }),
           });
           const data = await res.json()
           responsePhrase = data.response;
