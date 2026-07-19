@@ -112,14 +112,6 @@ def chat(request: ChatRequest):
     else:
         memory_text = "You don't have any saved memories about this user yet."
 
-    '''result = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[
-            {"role": "system", "content": f"You are Jarvi, a helpful voice assistant. {memory_text}"},
-            {"role": "user", "content": request.message},
-        ],
-        max_tokens=200,
-    )'''
     
     if request.image:
         messages = [
